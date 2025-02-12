@@ -51,8 +51,10 @@ const hoverPinScale = 0.20;
 const locations = [
   { coords: [1700, 4880], name: 'Jima Monastery', url: 'https://duckduckgo.com/?q=jima+monastery' },
   { coords: [3800, 3028], name: 'The Emerald Heaven of Nok', url: 'https://duckduckgo.com/?q=the+emerald+heaven+of+nok' },
-  { coords: [320, 1580], name: 'Scary Volcano', url: 'https://duckduckgo.com/?q=scary+volcano' },
+  { coords: [320, 1580], name: 'a Scary Volcano', url: 'https://duckduckgo.com/?q=a+scary+volcano' },
 ];
+
+const MAX_RESOLUTION_FOR_POINTS = 3;
 
 const features = locations.map(({ coords, name, url }) => {
   const feature = new Feature({ geometry: new Point(coords) });
@@ -63,12 +65,21 @@ const features = locations.map(({ coords, name, url }) => {
       scale: defaultPinScale,
     }),
   });
-  feature.setStyle(iconStyle);
+
+  feature.setStyle((_feature, resolution) => {
+    if (resolution <= MAX_RESOLUTION_FOR_POINTS)
+      return iconStyle;
+    return null;
+  });
   vectorSource.addFeature(feature);
 
   const tooltip = document.createElement('div');
   tooltip.className = 'tooltip';
-  tooltip.innerText = name;
+  tooltip.innerHTML = `
+  <span class="tooltip__title">${name}</span>
+  <br/>
+  <a href="${url}" target="_blank" rel="noopener noreferrer">&gt; search more</a>
+  `;
   const overlay = new Overlay({
     element: tooltip,
     offset: [0, -55],
@@ -85,18 +96,17 @@ const features = locations.map(({ coords, name, url }) => {
   return feature;
 });
 
-map.on('singleclick', event => {
-  const feature = map.forEachFeatureAtPixel(event.pixel, (feature) => feature);
-  if (feature) {
-    const url = feature.get('url');
-    if (url) {
-      window.open(url, '_blank');
-    }
-  }
-});
+// map.on('singleclick', event => {
+//   const feature = map.forEachFeatureAtPixel(event.pixel, (feature) => feature);
+//   if (feature) {
+//     const url = feature.get('url');
+//     if (url) {
+//       window.open(url, '_blank');
+//     }
+//   }
+// });
 
-map.on('pointermove', event => {
-  // map.getTargetElement().style.cursor = 'default';
+map.on('singleclick', event => {
   let hoveredFeature = null;
 
   map.forEachFeatureAtPixel(event.pixel, (feature) => {
@@ -105,15 +115,46 @@ map.on('pointermove', event => {
 
   features.forEach((feature) => {
     const overlay = feature.get('overlay');
-    const iconStyle = feature.get('iconStyle');
     if (feature === hoveredFeature) {
       overlay.setPosition(feature.getGeometry().getCoordinates());
-      iconStyle.getImage().setScale(hoverPinScale);
-      // map.getTargetElement().style.cursor = 'pointer';
     } else {
       overlay.setPosition(undefined);
-      iconStyle.getImage().setScale(defaultPinScale);
     }
-    feature.setStyle(iconStyle);
   });
+});
+
+const mapElement = map.getTargetElement();
+let wasFeatureHovered = false;
+const hoveredFeatures = new Set();
+map.on('pointermove', event => {
+  let isFeatureHovered = false;
+
+  const currentlyHoveredFeatures = new Set();
+  map.forEachFeatureAtPixel(event.pixel, feature => {
+    isFeatureHovered = true;
+    const iconStyle = feature.get('iconStyle');
+    iconStyle.getImage().setScale(hoverPinScale);
+    currentlyHoveredFeatures.add(feature);
+  });
+
+  features.forEach(feature => {
+    if (currentlyHoveredFeatures.has(feature) !== hoveredFeatures.has(feature)) {
+      const iconStyle = feature.get('iconStyle');
+      if (currentlyHoveredFeatures.has(feature)) {
+        hoveredFeatures.add(feature);
+        iconStyle.getImage().setScale(hoverPinScale);
+      }
+      else if (!currentlyHoveredFeatures.has(feature)) {
+        hoveredFeatures.delete(feature);
+        iconStyle.getImage().setScale(defaultPinScale);
+      }
+      feature.setStyle(iconStyle);
+    }
+  });
+
+  if (isFeatureHovered !== wasFeatureHovered) {
+    if (isFeatureHovered) mapElement.style.cursor = 'pointer';
+    else mapElement.style.cursor = 'default';
+    wasFeatureHovered = isFeatureHovered;
+  }
 });
